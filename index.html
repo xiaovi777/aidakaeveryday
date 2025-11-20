@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Health OS Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        /* --- Health OS v9.6 全局变量 --- */
+        :root {
+            --bg-color: #000;
+            --phone-bg: #121212;
+            --card-bg: rgba(30, 30, 30, 0.85);
+            --text-main: #e0e0e0;
+            --text-dim: #888;
+            
+            --accent-sleep: #8b5cf6;
+            --accent-poop: #f59e0b;
+            --accent-period: #fb7185;
+            --accent-period-light: rgba(251, 113, 133, 0.15);
+            --accent-ai: #3b82f6;
+            --accent-settings: #64748b;
+            
+            --glass-border: 1px solid rgba(255, 255, 255, 0.12);
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; outline: none; }
+        body { margin: 0; font-family: var(--font-family); background: #000; display: flex; justify-content: center; height: 100vh; overflow: hidden; }
+
+        .phone-screen {
+            width: 100%; max-width: 420px; height: 100%;
+            background-color: var(--phone-bg);
+            background-size: cover; background-position: center;
+            position: relative; overflow: hidden;
+            display: flex; flex-direction: column;
+            box-shadow: 0 0 50px rgba(0,0,0,0.6);
+        }
+        .phone-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.45); pointer-events: none; z-index: 0;
+        }
+
+        /* 顶部状态栏 */
+        .status-bar {
+            height: 44px; display: flex; justify-content: space-between; align-items: flex-end;
+            padding: 0 20px 10px 20px; font-size: 14px; color: white; font-weight: 600;
+            z-index: 100; flex-shrink: 0;
+        }
+
+        /* --- 屏幕切换系统 --- */
+        .screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; padding-top: 44px; /* 避开状态栏 */
+            transform: translateX(100%); transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+            z-index: 10; background: #121212;
+        }
+        .screen.active { transform: translateX(0); z-index: 20; }
+        .screen.home { transform: translateX(0); z-index: 1; background: transparent; }
+
+        .app-nav {
+            height: 54px; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 8px; border-bottom: var(--glass-border); background: rgba(30,30,30,0.95);
+            backdrop-filter: blur(10px); flex-shrink: 0;
+        }
+        .nav-btn { background: none; border: none; color: white; font-size: 24px; padding: 10px 15px; cursor: pointer; min-width: 50px; }
+        .page-title { font-size: 17px; font-weight: 600; color: white; letter-spacing: 0.5px; }
+
+        /* --- 内容容器 --- */
+        .content { padding: 20px; flex-grow: 1; overflow-y: auto; padding-bottom: 60px; -webkit-overflow-scrolling: touch; }
+
+        /* --- AI 聊天界面优化 --- */
+        .chat-container { 
+            display: flex; flex-direction: column; height: 100%; overflow: hidden; background: #000; 
+        }
+        .chat-history { 
+            flex: 1; overflow-y: auto; padding: 20px 15px; 
+            display: flex; flex-direction: column; gap: 18px; 
+        }
+        .msg-row { display: flex; align-items: flex-start; gap: 10px; max-width: 88%; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .msg-row.ai { align-self: flex-start; }
+        .msg-row.user { align-self: flex-end; flex-direction: row-reverse; }
+        .avatar { width: 38px; height: 38px; border-radius: 50%; background: #333; background-size: cover; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
+        
+        .bubble {
+            padding: 12px 16px; border-radius: 20px; font-size: 15px; line-height: 1.5; word-wrap: break-word;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .msg-row.ai .bubble { background: #2c2c2e; color: #e5e5e5; border-top-left-radius: 4px; }
+        .msg-row.user .bubble { background: #0a84ff; color: white; border-top-right-radius: 4px; }
+        
+        /* Markdown 样式 */
+        .bubble p { margin: 0 0 6px 0; }
+        .bubble p:last-child { margin: 0; }
+        .bubble ul { margin: 5px 0 5px 20px; padding: 0; }
+        .bubble strong { font-weight: 700; color: #fff; }
+
+        .chat-input-bar { 
+            flex-shrink: 0; padding: 12px 15px; background: #1c1c1e; border-top: 1px solid #2c2c2e; 
+            display: flex; gap: 10px; align-items: center;
+            padding-bottom: max(15px, env(safe-area-inset-bottom)); 
+        }
+        .chat-input { flex-grow: 1; border-radius: 20px; background: #2c2c2e; padding: 12px 16px; border: none; color: white; font-size: 16px; }
+        .send-btn { 
+            width: 42px; height: 42px; border-radius: 50%; background: #0a84ff; border: none; 
+            color: white; display: flex; justify-content: center; align-items: center; cursor: pointer; flex-shrink: 0; font-size: 18px; 
+        }
+
+        /* --- 首页组件 --- */
+        .home-clock { margin-top: 10vh; text-align: center; color: white; text-shadow: 0 4px 20px rgba(0,0,0,0.6); }
+        .time-big { font-size: 5.5rem; font-weight: 200; line-height: 1; letter-spacing: -2px; font-variant-numeric: tabular-nums; }
+        .date-small { font-size: 1.3rem; margin-top: 5px; font-weight: 400; opacity: 0.9; }
+        
+        .app-grid { 
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 25px 15px; 
+            padding: 40px 25px; position: absolute; bottom: 60px; width: 100%; 
+        }
+        .app-item { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; transition: transform 0.1s; }
+        .app-item:active { transform: scale(0.92); filter: brightness(0.8); }
+        .app-icon { 
+            width: 62px; height: 62px; border-radius: 16px; display: flex; justify-content: center; align-items: center; 
+            font-size: 30px; box-shadow: 0 10px 20px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); 
+            background-size: 200% 200%; animation: gradientMove 5s ease infinite;
+        }
+        
+        .bg-sleep { background: linear-gradient(135deg, #4c1d95, #8b5cf6); }
+        .bg-poop { background: linear-gradient(135deg, #78350f, #f59e0b); }
+        .bg-period { background: linear-gradient(135deg, #9f1239, #fb7185); }
+        .bg-ai { background: linear-gradient(135deg, #172554, #3b82f6); }
+        .bg-settings { background: linear-gradient(135deg, #334155, #64748b); }
+        
+        .app-name { color: white; font-size: 12px; font-weight: 500; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+
+        /* --- 通用组件 --- */
+        .card { background: var(--card-bg); border-radius: 22px; padding: 22px; margin-bottom: 18px; border: var(--glass-border); position: relative; overflow: hidden; }
+        .btn { 
+            width: 100%; padding: 16px; border-radius: 16px; border: none; font-size: 16px; font-weight: 600; 
+            color: white; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 8px; 
+            transition: transform 0.1s, opacity 0.2s; 
+        }
+        .btn:active { transform: scale(0.98); opacity: 0.8; }
+        .btn-secondary { background: rgba(255,255,255,0.1); color: var(--text-main); }
+        
+        input, select, textarea { 
+            background: rgba(0,0,0,0.4); border: 1px solid #444; color: white; padding: 14px; 
+            border-radius: 12px; width: 100%; font-size: 16px; margin-top: 8px; font-family: inherit; 
+        }
+
+        /* --- 日历 --- */
+        .cal-header { display: flex; justify-content: space-between; margin-bottom:15px; color:white; font-size:15px; font-weight:700; align-items:center; }
+        .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; text-align: center; }
+        .cal-cell { 
+            aspect-ratio: 1; display: flex; justify-content: center; align-items: center; flex-direction: column; 
+            border-radius: 10px; font-size: 13px; color: #555; background: rgba(255,255,255,0.03); 
+            position: relative; cursor: pointer; transition: background 0.2s;
+        }
+        .cal-cell.today { border: 1.5px solid white; color: white; font-weight: bold; box-shadow: 0 0 10px rgba(255,255,255,0.2); }
+        
+        /* 标记样式 */
+        .mark-sleep-gold { background: rgba(251, 191, 36, 0.2); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.4); }
+        .mark-sleep-silver { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+        .poop-dot { width:5px; height:5px; background:var(--accent-poop); border-radius:50%; margin-top: 3px; }
+        .mark-period { background: var(--accent-period); color: white; box-shadow: 0 0 12px rgba(251, 113, 133, 0.5); }
+        .mark-predict { border: 1px dashed var(--accent-period); color: var(--accent-period); opacity: 0.6; }
+        .mark-ovulation { background: rgba(139, 92, 246, 0.25); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.5); }
+
+        /* --- 经期圆环 (新版) --- */
+        .cycle-ring { 
+            width: 220px; height: 220px; border-radius: 50%; margin: 20px auto 40px; 
+            border: 8px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; 
+            justify-content: center; align-items: center; position: relative; transition: all 0.5s ease;
+        }
+        .cycle-ring.active { 
+            border-color: var(--accent-period); 
+            box-shadow: 0 0 40px var(--accent-period-light), inset 0 0 20px var(--accent-period-light); 
+        }
+        .ring-main { font-size: 3.8rem; font-weight: 700; color: white; line-height: 1.1; }
+        .ring-sub { font-size: 1.1rem; color: var(--accent-period); margin-top: 5px; font-weight: 500; }
+        .ring-label { font-size: 0.9rem; color: #888; margin-top: -5px; }
+
+        /* --- 模态框 --- */
+        .modal { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 200; display: none; justify-content: center; align-items: center; backdrop-filter: blur(10px); opacity: 0; transition: opacity 0.2s; }
+        .modal.visible { display: flex; opacity: 1; }
+        .modal-content { background: #1c1c1e; width: 85%; border-radius: 24px; padding: 25px; border: 1px solid #333; max-height: 80%; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .toast { position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%) scale(0.9); background: rgba(255,255,255,0.95); color: black; padding: 12px 24px; border-radius: 30px; font-size: 15px; opacity: 0; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); pointer-events: none; z-index: 300; font-weight:600; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+        .toast.show { opacity: 1; transform: translateX(-50%) scale(1); }
+
+        /* Typing Animation */
+        .typing-bubble { padding: 15px 20px; gap: 5px; align-items: center; display: flex; }
+        .typing-dot { width: 6px; height: 6px; background: #888; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+
+<div class="phone-screen" id="phone-bg">
+    <div class="phone-overlay"></div>
+    <div class="status-bar">
+        <span id="clock-small">12:00</span>
+        <span style="display:flex;gap:5px"><span>5G</span><span style="font-size:16px">🔋</span></span>
+    </div>
+
+    <div id="screen-home" class="screen home active">
+        <div class="home-clock">
+            <div class="time-big" id="clock-big">12:00</div>
+            <div class="date-small" id="date-text">--月--日 星期--</div>
+        </div>
+        <div class="app-grid">
+            <div class="app-item" onclick="App.open('sleep')"><div class="app-icon bg-sleep">🌙</div><span class="app-name">早睡</span></div>
+            <div class="app-item" onclick="App.open('poop')"><div class="app-icon bg-poop">💩</div><span class="app-name">便便</span></div>
+            <div class="app-item" onclick="App.open('period')"><div class="app-icon bg-period">🩸</div><span class="app-name">经期</span></div>
+            <div class="app-item" onclick="App.open('ai')"><div class="app-icon bg-ai">🤖</div><span class="app-name">管家</span></div>
+            <div class="app-item" onclick="App.open('settings')"><div class="app-icon bg-settings">⚙️</div><span class="app-name">设置</span></div>
+        </div>
+    </div>
+
+    <div id="screen-sleep" class="screen">
+        <div class="app-nav"><button class="nav-btn" onclick="App.home()">✕</button><span class="page-title">早睡打卡</span><div style="width:50px"></div></div>
+        <div class="content">
+            <div class="card" style="text-align:center; padding: 30px 20px;">
+                <div style="color:var(--text-dim); font-size:13px; text-transform:uppercase; letter-spacing:1px;">连续打卡</div>
+                <div style="font-size:4rem; color:white; font-weight:800; line-height:1.2" id="sleep-streak">0</div>
+                <div style="color:var(--text-dim); font-size:13px; margin-top:15px; display:flex; justify-content:center; align-items:center; gap:10px;">
+                    <span>目标时间</span>
+                    <input type="time" id="sleep-target" value="23:00" onchange="SleepApp.saveSettings()" style="background:rgba(255,255,255,0.1); border:none; color:var(--accent-sleep); width:auto; padding:5px 10px; font-size:16px; font-weight:bold; margin:0;">
+                </div>
+            </div>
+            <button class="btn" style="background:var(--accent-sleep); box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);" onclick="SleepApp.checkIn()">
+                <span style="font-size:20px">😴</span> 我要睡了
+            </button>
+            <div class="card">
+                <div class="cal-header"><span onclick="UI.changeMonth('sleep',-1)">◀</span><span id="sleep-month">--</span><span onclick="UI.changeMonth('sleep',1)">▶</span></div>
+                <div class="cal-grid" id="sleep-cal"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-poop" class="screen">
+        <div class="app-nav"><button class="nav-btn" onclick="App.home()">✕</button><span class="page-title">肠胃健康</span><div style="width:50px"></div></div>
+        <div class="content">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center">
+                    <div>
+                        <div style="color:var(--text-dim); font-size:13px">今日次数</div>
+                        <div style="font-size:2.5rem; color:white; font-weight:bold" id="poop-count">0</div>
+                    </div>
+                    <div style="font-size:40px">🧻</div>
+                </div>
+            </div>
+            <div class="card">
+                <div style="color:var(--text-dim); font-size:12px; margin-bottom:12px">形状记录:</div>
+                <div style="display:flex; gap:12px">
+                    <button class="btn" style="background:#2a2a2a; flex:1; font-size:28px; padding:10px" onclick="PoopApp.checkIn(1)">🪨</button>
+                    <button class="btn" style="background:#2a2a2a; flex:1; font-size:28px; padding:10px" onclick="PoopApp.checkIn(2)">🍌</button>
+                    <button class="btn" style="background:#2a2a2a; flex:1; font-size:28px; padding:10px" onclick="PoopApp.checkIn(3)">🌊</button>
+                </div>
+            </div>
+            <div class="card">
+                <div class="cal-header"><span onclick="UI.changeMonth('poop',-1)">◀</span><span id="poop-month">--</span><span onclick="UI.changeMonth('poop',1)">▶</span></div>
+                <div class="cal-grid" id="poop-cal"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-period" class="screen">
+        <div class="app-nav"><button class="nav-btn" onclick="App.home()">✕</button><span class="page-title">经期助手</span><button class="nav-btn" style="font-size:20px" onclick="document.getElementById('period-settings-modal').classList.add('visible')">⚙️</button></div>
+        <div class="content">
+            <div class="cycle-ring" id="period-ring">
+                <div class="ring-label" id="ring-top-label">状态</div>
+                <div class="ring-main" id="period-days-text">--</div>
+                <div class="ring-sub" id="period-status-text">分析中...</div>
+            </div>
+
+            <button class="btn" style="background:var(--accent-period); box-shadow: 0 4px 20px rgba(251, 113, 133, 0.4); margin-bottom: 20px;" id="period-btn" onclick="PeriodApp.toggleToday()">
+                🩸 记录大姨妈
+            </button>
+
+            <div class="card">
+                <div class="cal-header"><span onclick="UI.changeMonth('period',-1)">◀</span><span id="period-month">--</span><span onclick="UI.changeMonth('period',1)">▶</span></div>
+                <div class="cal-grid" id="period-cal"></div>
+                <div style="display:flex; gap:15px; margin-top:15px; justify-content:center; font-size:12px; color:#666;">
+                    <div style="display:flex;align-items:center;gap:5px"><div style="width:8px;height:8px;background:var(--accent-period);border-radius:50%"></div>经期</div>
+                    <div style="display:flex;align-items:center;gap:5px"><div style="width:8px;height:8px;border:1px dashed var(--accent-period);border-radius:50%"></div>预测</div>
+                    <div style="display:flex;align-items:center;gap:5px"><div style="width:8px;height:8px;background:#a78bfa;border-radius:50%"></div>排卵</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-ai" class="screen">
+        <div class="app-nav"><button class="nav-btn" onclick="App.home()">✕</button><span class="page-title" id="ai-title">私人健康管家</span><button class="nav-btn" style="font-size:20px" onclick="ChatApp.openSettings()">⚙️</button></div>
+        
+        <div class="chat-container">
+            <div class="chat-history" id="chat-history">
+                </div>
+            <div class="chat-input-bar">
+                <input type="text" class="chat-input" id="chat-input" placeholder="告诉管家你的感受..." onkeypress="if(event.keyCode===13) ChatApp.send()">
+                <button class="send-btn" onclick="ChatApp.send()">⬆</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-settings" class="screen">
+        <div class="app-nav"><button class="nav-btn" onclick="App.home()">✕</button><span class="page-title">系统设置</span><div style="width:50px"></div></div>
+        <div class="content">
+            <div class="card">
+                <h3 style="color:white; margin-top:0">个性化</h3>
+                <label class="btn btn-secondary">更换壁纸<input type="file" accept="image/*" style="display:none;" onchange="SettingsApp.uploadWallpaper(this)"></label>
+                <button class="btn btn-secondary" style="margin-top:10px" onclick="SettingsApp.resetWallpaper()">恢复默认壁纸</button>
+            </div>
+            <div class="card">
+                <h3 style="color:white; margin-top:0">AI 连接配置</h3>
+                <div style="font-size:12px; color:#666; margin-bottom:10px">建议使用 Gemini Flash 模型，响应快且免费</div>
+                <input type="text" id="api-url" placeholder="API 地址 (例如 https://generativelanguage.googleapis.com)">
+                <input type="password" id="api-key" placeholder="API Key">
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                    <select id="model-select" style="margin-top:0"><option value="">输入 Key 后点击拉取</option></select>
+                    <button class="btn" style="width:auto; background:#333; margin:0; padding:0 20px;" onclick="ChatApp.fetchModels()">拉取模型</button>
+                </div>
+                <button class="btn" style="background:var(--accent-ai); margin-top:15px" onclick="ChatApp.saveApi()">保存配置</button>
+            </div>
+            <div class="card">
+                <h3 style="color:white; margin-top:0">数据管理</h3>
+                <button class="btn btn-secondary" onclick="Data.export()">📤 导出所有数据备份</button>
+                <label class="btn btn-secondary" style="margin-top:10px">📥 导入备份文件<input type="file" hidden onchange="Data.import(this)"></label>
+                <button class="btn" style="background:rgba(220, 38, 38, 0.2); color:#ef4444; margin-top:20px; border:1px solid rgba(220, 38, 38, 0.3)" onclick="Data.clear()">⚠️ 清空所有数据</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="period-settings-modal" class="modal">
+        <div class="modal-content">
+            <h3 style="color:white;margin-top:0">周期设置</h3>
+            <div style="margin-bottom:15px">
+                <label style="color:#888;font-size:12px">月经周期 (两次开始日期的间隔)</label>
+                <input type="number" id="cycle-len" value="28">
+            </div>
+            <div style="margin-bottom:20px">
+                <label style="color:#888;font-size:12px">经期持续天数</label>
+                <input type="number" id="period-len" value="5">
+            </div>
+            <button class="btn" style="background:var(--accent-period)" onclick="PeriodApp.saveSettings()">保存</button>
+            <button class="btn btn-secondary" style="margin-top:10px" onclick="document.getElementById('period-settings-modal').classList.remove('visible')">取消</button>
+        </div>
+    </div>
+
+    <div id="ai-persona-modal" class="modal">
+        <div class="modal-content">
+            <h3 style="color:white;margin-top:0">管家设定</h3>
+            <label style="color:#888;font-size:12px">管家名字</label>
+            <input type="text" id="persona-name">
+            <label style="color:#888;font-size:12px">头像图片链接</label>
+            <input type="text" id="persona-avatar">
+            <label style="color:#888;font-size:12px">性格与职责 (Prompt)</label>
+            <textarea id="persona-prompt" rows="6" style="line-height:1.4"></textarea>
+            <button class="btn" style="background:var(--accent-ai); margin-top:15px" onclick="ChatApp.savePersona()">保存设定</button>
+            <button class="btn btn-secondary" style="margin-top:10px" onclick="document.getElementById('ai-persona-modal').classList.remove('visible')">取消</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast">提示信息</div>
+</div>
+
+<script>
+    /* --- 核心工具库 --- */
+    const DB = { 
+        get: (k,d)=>JSON.parse(localStorage.getItem(k)||JSON.stringify(d)), 
+        set: (k,v)=>localStorage.setItem(k,JSON.stringify(v)), 
+        today: ()=>new Date().toISOString().split('T')[0],
+        formatDate: (d)=>d.toISOString().split('T')[0]
+    };
+    
+    const UI = { 
+        toast: (msg)=>{
+            const t=document.getElementById('toast'); t.innerText=msg; t.classList.add('show');
+            if(UI.timer) clearTimeout(UI.timer);
+            UI.timer = setTimeout(()=>t.classList.remove('show'), 2500);
+        },
+        changeMonth: (app,off)=>{
+            const d=App.dates[app]; d.setMonth(d.getMonth()+off);
+            if(app==='sleep') SleepApp.render();
+            if(app==='poop') PoopApp.render();
+            if(app==='period') PeriodApp.render();
+        },
+        renderCal: (el,title,date,cb)=>{
+            document.getElementById(title).innerText=`${date.getFullYear()}年 ${date.getMonth()+1}月`;
+            const g=document.getElementById(el); g.innerHTML='';
+            const f=new Date(date.getFullYear(),date.getMonth(),1).getDay();
+            const n=new Date(date.getFullYear(),date.getMonth()+1,0).getDate();
+            for(let i=0;i<f;i++) g.appendChild(document.createElement('div'));
+            for(let d=1;d<=n;d++){
+                const c=document.createElement('div'); c.className='cal-cell'; c.innerText=d;
+                const ds=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                if(ds===DB.today()) c.classList.add('today');
+                cb(c,ds);
+                g.appendChild(c);
+            }
+        }
+    };
+
+    const App = { 
+        dates: {sleep:new Date(), poop:new Date(), period:new Date()},
+        open: (id)=>{
+            document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+            document.getElementById(`screen-${id}`).classList.add('active');
+            // 渲染特定App逻辑
+            if(id==='sleep') SleepApp.render();
+            if(id==='poop') PoopApp.render();
+            if(id==='period') PeriodApp.render();
+            if(id==='ai') { ChatApp.scrollToBottom(); ChatApp.checkGreeting(); }
+            if(id==='settings') ChatApp.loadSettings();
+        },
+        home: ()=>{
+            document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+            document.getElementById('screen-home').classList.add('active');
+        },
+        init: ()=>{
+            const wp=localStorage.getItem('health_os_wallpaper');
+            if(wp) document.getElementById('phone-bg').style.backgroundImage=`url(${wp})`;
+            // 预加载 AI 历史
+            ChatApp.history = DB.get('chat_history',[]);
+        }
+    };
+
+    /* --- 睡眠模块 --- */
+    const SleepApp = { 
+        checkIn: ()=>{
+            const d=DB.get('sleep_data',[]);
+            if(d.some(r=>r.date===DB.today())) return UI.toast('今晚已经打过卡啦');
+            const timeStr = new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit', hour12:false});
+            d.unshift({date:DB.today(), time:timeStr});
+            DB.set('sleep_data',d);
+            UI.toast('晚安，祝你好梦 💤');
+            SleepApp.render();
+        },
+        saveSettings: ()=>{
+            DB.set('sleep_target',document.getElementById('sleep-target').value);
+            UI.toast('目标已更新');
+            SleepApp.render();
+        }, 
+        render: ()=>{
+            const d=DB.get('sleep_data',[]);
+            const t=DB.get('sleep_target','23:00');
+            document.getElementById('sleep-target').value=t;
+            
+            // 计算连续打卡 (Streak)
+            let streak=0;
+            const recordMap = new Set(d.map(r=>r.date));
+            // 检查昨天是否打卡，如果昨天打了，算上今天(如果今天打了)
+            let checkDate = new Date();
+            if(!recordMap.has(DB.formatDate(checkDate))) {
+                // 如果今天没打，从昨天开始算连续
+                checkDate.setDate(checkDate.getDate()-1);
+            }
+            while(recordMap.has(DB.formatDate(checkDate))){
+                streak++;
+                checkDate.setDate(checkDate.getDate()-1);
+            }
+            
+            document.getElementById('sleep-streak').innerText = streak;
+            
+            UI.renderCal('sleep-cal','sleep-month',App.dates.sleep,(c,ds)=>{
+                const r=d.find(x=>x.date===ds);
+                if(r){
+                    c.classList.add(r.time<=t ? 'mark-sleep-gold' : 'mark-sleep-silver');
+                    // 小点标记时间
+                    c.innerHTML += `<div style="font-size:8px;transform:scale(0.8);margin-top:-2px">${r.time}</div>`;
+                }
+            });
+        } 
+    };
+
+    /* --- 便便模块 --- */
+    const PoopApp = { 
+        checkIn: (t)=>{
+            const d=DB.get('poop_data',[]);
+            d.unshift({date:DB.today(), type:t, ts:Date.now()});
+            DB.set('poop_data',d);
+            UI.toast('记录成功，肠胃轻松 🧻');
+            PoopApp.render();
+        }, 
+        render: ()=>{
+            const d=DB.get('poop_data',[]);
+            document.getElementById('poop-count').innerText = d.filter(x=>x.date===DB.today()).length;
+            UI.renderCal('poop-cal','poop-month',App.dates.poop,(c,ds)=>{
+                const n=d.filter(x=>x.date===ds).length;
+                if(n>0){
+                    const dots = Math.min(n,4);
+                    let html = '<div style="display:flex;gap:1px;margin-top:2px">';
+                    for(let i=0;i<dots;i++) html+='<div class="poop-dot"></div>';
+                    html+='</div>';
+                    c.innerHTML += html;
+                }
+            });
+        } 
+    };
+
+    /* --- 经期模块 (核心算法升级) --- */
+    const PeriodApp = { 
+        saveSettings: ()=>{
+            const s={cycle:parseInt(document.getElementById('cycle-len').value), duration:parseInt(document.getElementById('period-len').value)};
+            DB.set('period_settings',s);
+            document.getElementById('period-settings-modal').classList.remove('visible');
+            PeriodApp.render();
+        }, 
+        toggleToday: ()=>{
+            let d=DB.get('period_dates',[]); // 存储所有标记为经期的日期字符串数组
+            const t=DB.today();
+            if(d.includes(t)) d = d.filter(x=>x!==t);
+            else d.push(t);
+            d.sort(); // 确保日期排序
+            DB.set('period_dates',d);
+            PeriodApp.render();
+        },
+        // 计算当前处于经期的第几天
+        getPeriodDayCount: (dates, todayStr) => {
+            if(!dates.includes(todayStr)) return 0;
+            let count = 1;
+            let checkDate = new Date(todayStr);
+            // 向前回溯
+            while(true) {
+                checkDate.setDate(checkDate.getDate() - 1);
+                const ds = DB.formatDate(checkDate);
+                if(dates.includes(ds)) {
+                    count++;
+                } else {
+                    break;
+                }
+            }
+            return count;
+        },
+        render: ()=>{
+            const d=DB.get('period_dates',[]).sort();
+            const settings=DB.get('period_settings',{cycle:28,duration:5});
+            document.getElementById('cycle-len').value = settings.cycle;
+            document.getElementById('period-len').value = settings.duration;
+
+            // 算法：寻找最近一次周期的开始日
+            let lastStart = null;
+            if(d.length > 0) {
+                // 简单的聚类逻辑：如果两天间隔超过10天，认为是新的周期
+                let currentBlockStart = d[d.length-1];
+                for(let i=d.length-1; i>0; i--) {
+                    const curr = new Date(d[i]);
+                    const prev = new Date(d[i-1]);
+                    const diff = (curr - prev) / (1000 * 60 * 60 * 24);
+                    if(diff > 10) {
+                        break; // 找到了这一轮的起点
+                    }
+                    currentBlockStart = d[i-1];
+                }
+                lastStart = currentBlockStart;
+            }
+
+            // 预测逻辑
+            let nextStart = null, ovulation = null, predictDays = [];
+            if(lastStart) {
+                const startObj = new Date(lastStart);
+                const nextObj = new Date(startObj);
+                nextObj.setDate(startObj.getDate() + settings.cycle);
+                nextStart = nextObj;
+                
+                // 排卵日通常在下次月经前14天
+                const ovObj = new Date(nextObj);
+                ovObj.setDate(ovObj.getDate() - 14);
+                ovulation = DB.formatDate(ovObj);
+
+                for(let i=0; i<settings.duration; i++){
+                    const p = new Date(nextObj);
+                    p.setDate(p.getDate() + i);
+                    predictDays.push(DB.formatDate(p));
+                }
+            }
+
+            // UI 更新
+            const isPeriodToday = d.includes(DB.today());
+            const btn = document.getElementById('period-btn');
+            const ringMain = document.getElementById('period-days-text');
+            const ringSub = document.getElementById('period-status-text');
+            const ringTop = document.getElementById('ring-top-label');
+            const ring = document.getElementById('period-ring');
+
+            if(isPeriodToday) {
+                const dayCount = PeriodApp.getPeriodDayCount(d, DB.today());
+                ringMain.innerText = `第 ${dayCount} 天`;
+                ringSub.innerText = "多喝热水 保持温暖";
+                ringTop.innerText = "经期中";
+                ring.className = "cycle-ring active";
+                btn.innerText = "今日经期结束 (点击取消)";
+                btn.style.background = "#333";
+            } else {
+                ring.className = "cycle-ring";
+                btn.innerText = "🩸 大姨妈来了";
+                btn.style.background = "var(--accent-period)";
+                
+                if(nextStart) {
+                    const todayObj = new Date();
+                    const diff = Math.ceil((nextStart - todayObj) / (1000 * 60 * 60 * 24));
+                    
+                    if(diff > 0) {
+                        ringMain.innerText = diff;
+                        ringSub.innerText = "天后大姨妈";
+                        
+                        // 判断是否排卵期 (排卵日前后2天)
+                        const ovDate = new Date(ovulation);
+                        const ovDiff = Math.abs((todayObj - ovDate) / (1000 * 60 * 60 * 24));
+                        if(ovDiff <= 2) {
+                             ringTop.innerText = "排卵期";
+                             ringSub.innerText = "受孕概率高";
+                        } else {
+                            // 判断所处阶段
+                            ringTop.innerText = diff > 14 ? "卵泡期 (精力好)" : "黄体期 (情绪波动)";
+                        }
+                    } else {
+                        ringMain.innerText = Math.abs(diff) + 1;
+                        ringSub.innerText = "天 经期推迟";
+                        ringTop.innerText = "注意观察";
+                        ringMain.style.color = "#fb7185";
+                    }
+                } else {
+                    ringMain.innerText = "--";
+                    ringSub.innerText = "等待更多数据";
+                }
+            }
+
+            // 日历渲染
+            UI.renderCal('period-cal','period-month',App.dates.period,(c,ds)=>{
+                c.onclick=()=>{
+                    let nd=DB.get('period_dates',[]);
+                    if(nd.includes(ds)) nd=nd.filter(x=>x!==ds);
+                    else nd.push(ds);
+                    nd.sort();
+                    DB.set('period_dates',nd);
+                    PeriodApp.render();
+                };
+                
+                if(d.includes(ds)) c.classList.add('mark-period');
+                else if(predictDays.includes(ds)) c.classList.add('mark-predict');
+                else if(ds===ovulation) c.classList.add('mark-ovulation');
+            });
+        } 
+    };
+
+    /* --- AI 核心 (ChatApp) --- */
+    const ChatApp = {
+        config: { url: 'https://generativelanguage.googleapis.com', key: '', model: 'gemini-1.5-flash' },
+        persona: { 
+            name: '健康管家', 
+            avatar: 'https://i.postimg.cc/PxZrFFFL/o-o-1.jpg', // 默认头像
+            prompt: '你是一个贴心、专业且稍微有点严格的私人健康管家。你拥有用户的所有生理数据。你的职责是根据数据照顾用户，给出建议，如果用户熬夜或饮食不规律，你要温柔地责备。请用简洁、口语化的中文回复，不要长篇大论。' 
+        },
+        history: [],
+        
+        loadSettings: ()=>{
+            const c=DB.get('ai_config',ChatApp.config);
+            document.getElementById('api-url').value=c.url;
+            document.getElementById('api-key').value=c.key;
+            if(c.model) document.getElementById('model-select').innerHTML=`<option value="${c.model}">${c.model}</option>`;
+        },
+        saveApi: ()=>{
+            const c={url:document.getElementById('api-url').value, key:document.getElementById('api-key').value, model:document.getElementById('model-select').value};
+            DB.set('ai_config',c); ChatApp.config=c; UI.toast('配置已保存');
+        },
+        openSettings: ()=>{
+            const p=DB.get('ai_persona',ChatApp.persona);
+            document.getElementById('persona-name').value=p.name;
+            document.getElementById('persona-avatar').value=p.avatar;
+            document.getElementById('persona-prompt').value=p.prompt;
+            document.getElementById('ai-persona-modal').classList.add('visible');
+        },
+        savePersona: ()=>{
+            const p={name:document.getElementById('persona-name').value, avatar:document.getElementById('persona-avatar').value, prompt:document.getElementById('persona-prompt').value};
+            DB.set('ai_persona',p); ChatApp.persona=p;
+            document.getElementById('ai-title').innerText=p.name;
+            document.getElementById('ai-persona-modal').classList.remove('visible');
+            ChatApp.render();
+            UI.toast('管家设定已更新');
+        },
+        
+        /* 核心：获取全知数据上下文 */
+        getContext: ()=>{
+            const today = DB.today();
+            const poopData = DB.get('poop_data',[]);
+            const sleepData = DB.get('sleep_data',[]);
+            const periodDates = DB.get('period_dates',[]);
+            
+            // 1. 睡眠分析
+            const sleepRec = sleepData.find(x=>x.date===today);
+            const yesterdaySleep = sleepData.find(x=>x.date === DB.formatDate(new Date(Date.now()-86400000)));
+            let sleepStatus = "暂无记录";
+            if(sleepRec) sleepStatus = `今晚已于 ${sleepRec.time} 入睡`;
+            else if(yesterdaySleep) sleepStatus = `昨晚于 ${yesterdaySleep.time} 入睡`;
+            
+            // 2. 便便分析
+            const poopToday = poopData.filter(x=>x.date===today).length;
+            // 找最近一次
+            let lastPoop = "今天还没拉";
+            if(poopToday > 0) lastPoop = `今天拉了 ${poopToday} 次`;
+            else if(poopData.length > 0) {
+                const lastDate = new Date(poopData[0].date);
+                const daysDiff = Math.floor((new Date() - lastDate)/(1000*60*60*24));
+                lastPoop = `已经 ${daysDiff} 天没拉屎了`;
+            }
+
+            // 3. 经期分析
+            const isPeriod = periodDates.includes(today);
+            let periodStatus = "非经期";
+            if(isPeriod) {
+                const dayCount = PeriodApp.getPeriodDayCount(periodDates, today);
+                periodStatus = `经期中 (第 ${dayCount} 天)`;
+            } else {
+                // 简单判断阶段
+                const ringText = document.getElementById('period-status-text').innerText; // 复用UI计算结果
+                periodStatus = `非经期 (${ringText})`;
+            }
+
+            return `
+【系统数据监控】
+- 当前时间: ${new Date().toLocaleString('zh-CN')}
+- 经期状态: ${periodStatus}
+- 肠胃状态: ${lastPoop}
+- 睡眠状态: ${sleepStatus}
+- 连续早睡: ${document.getElementById('sleep-streak').innerText} 天
+请基于以上数据，以管家的身份与主人对话。如果数据有异常（如好几天没拉屎、熬夜、经期），请主动关怀。
+`;
+        },
+
+        fetchModels: async ()=>{
+            const url=document.getElementById('api-url').value, key=document.getElementById('api-key').value;
+            if(!key) return alert('请输入 API Key');
+            const btn = event.target; btn.innerText = "请求中...";
+            try{
+                const isG=url.includes('google')||url.includes('generativelanguage');
+                const fetchUrl = isG ? `${url}/v1beta/models?key=${key}` : `${url}/v1/models`;
+                const res=await fetch(fetchUrl,{headers:isG?{}:{'Authorization':`Bearer ${key}`}});
+                const data=await res.json();
+                const list=isG?data.models.map(m=>m.name.replace('models/','')):data.data.map(m=>m.id);
+                const sel=document.getElementById('model-select'); sel.innerHTML='';
+                list.forEach(m=>{const o=document.createElement('option');o.innerText=m;o.value=m;sel.add(o)});
+                // 自动选一个推荐的
+                if(list.includes('gemini-1.5-flash')) sel.value='gemini-1.5-flash';
+                UI.toast(`已获取 ${list.length} 个模型`);
+            }catch(e){alert('拉取失败: '+e.message);}
+            btn.innerText = "拉取模型";
+        },
+        
+        showTyping: () => {
+            const el = document.getElementById('chat-history');
+            const div = document.createElement('div'); div.id = 'typing-bubble'; div.className = 'msg-row ai';
+            const p = DB.get('ai_persona', ChatApp.persona);
+            div.innerHTML = `<div class="avatar" style="background-image:url('${p.avatar}')"></div><div class="bubble typing-bubble"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>`;
+            el.appendChild(div); el.scrollTop = el.scrollHeight;
+        },
+        removeTyping: () => { const t = document.getElementById('typing-bubble'); if(t) t.remove(); },
+
+        checkGreeting: () => {
+            // 如果没有历史记录，AI主动打招呼
+            if(ChatApp.history.length === 0) {
+                ChatApp.addMsg('ai', '主人你好，我是你的健康管家。我已经准备好记录你的身体数据了。今天感觉怎么样？');
+            }
+        },
+
+        send: async () => {
+            const input = document.getElementById('chat-input'); const text = input.value.trim();
+            if(!text) return;
+            ChatApp.addMsg('user', text); input.value='';
+            ChatApp.showTyping();
+
+            const c = DB.get('ai_config', ChatApp.config), p = DB.get('ai_persona', ChatApp.persona);
+            // 关键：将动态数据拼接到 System Prompt
+            const sysPrompt = `${p.prompt}\n${ChatApp.getContext()}`;
+            
+            // 构建消息上下文 (保留最近 12 条对话)
+            const msgs = [{role:'system', content:sysPrompt}, ...ChatApp.history.slice(-12)];
+            
+            try {
+                const isG = c.url.includes('google')||c.url.includes('generativelanguage');
+                let url=c.url, body={}, headers={'Content-Type':'application/json'};
+                
+                if(isG){ 
+                    url=`${c.url}/v1beta/models/${c.model}:generateContent?key=${c.key}`; 
+                    // Gemini 格式适配
+                    const gContents = [];
+                    // 将 System prompt 放入第一条 User 消息的前面，或者使用 systemInstruction (v1beta支持)
+                    // 这里为了兼容性，采用 merged prompt 策略
+                    let lastRole = '';
+                    msgs.forEach(m => {
+                        if(m.role === 'system') return; // 跳过，稍后处理
+                        const role = m.role==='user'?'user':'model';
+                        gContents.push({role: role, parts:[{text: m.content}]});
+                    });
+                    // 把 system prompt 拼接到最新一条消息里，或者第一条里，Gemini对 system instruction 支持变动较大
+                    // 最稳妥：作为第一条 user 消息的背景信息
+                    if(gContents.length > 0 && gContents[0].role === 'user') {
+                        gContents[0].parts[0].text = sysPrompt + "\n\n" + gContents[0].parts[0].text;
+                    } else {
+                        gContents.unshift({role:'user', parts:[{text: sysPrompt + "\n(用户开始对话)"}]});
+                    }
+                    
+                    body={contents:gContents}; 
+                } else { 
+                    // OpenAI 格式
+                    if(!url.endsWith('/chat/completions')) url+='/chat/completions'; 
+                    headers['Authorization']=`Bearer ${c.key}`; 
+                    body={model:c.model, messages:msgs}; 
+                }
+                
+                const res = await fetch(url, {method:'POST', headers, body:JSON.stringify(body)});
+                const data = await res.json();
+                
+                let reply = '';
+                if(isG) reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                else reply = data.choices?.[0]?.message?.content;
+                
+                if(!reply) throw new Error('API 返回数据格式异常');
+
+                ChatApp.removeTyping();
+                ChatApp.addMsg('ai', reply);
+            } catch(e) { 
+                ChatApp.removeTyping(); 
+                ChatApp.addMsg('ai', '连接管家失败: ' + e.message); 
+            }
+        },
+        addMsg: (role, text) => { 
+            ChatApp.history.push({role, content:text}); 
+            DB.set('chat_history', ChatApp.history); 
+            ChatApp.renderMsg(role, text); 
+        },
+        renderMsg: (role, text) => {
+            const el = document.getElementById('chat-history');
+            const div = document.createElement('div'); div.className = `msg-row ${role}`;
+            const p = DB.get('ai_persona', ChatApp.persona);
+            const av = role==='ai' ? `style="background-image:url('${p.avatar}')"` : '';
+            const htmlContent = marked.parse(text);
+            div.innerHTML = role==='ai' ? 
+                `<div class="avatar" ${av} onclick="ChatApp.openSettings()"></div><div class="bubble">${htmlContent}</div>` : 
+                `<div class="bubble">${htmlContent}</div>`;
+            el.appendChild(div);
+            el.scrollTop = el.scrollHeight;
+        },
+        render: () => { 
+            document.getElementById('chat-history').innerHTML=''; 
+            ChatApp.history.forEach(m => ChatApp.renderMsg(m.role==='user'?'user':'ai', m.content)); 
+        },
+        scrollToBottom: () => { const el=document.getElementById('chat-history'); el.scrollTop=el.scrollHeight; }
+    };
+
+    /* --- 设置逻辑 --- */
+    const SettingsApp = {
+        uploadWallpaper: (el)=>{
+            const r=new FileReader();
+            r.onload=e=>{
+                try{
+                    localStorage.setItem('health_os_wallpaper',e.target.result);
+                    App.init(); UI.toast('壁纸已更新');
+                }catch(e){ alert('图片太大了，请换一张小点的图'); }
+            };
+            if(el.files[0]) r.readAsDataURL(el.files[0]);
+        },
+        resetWallpaper: ()=>{ localStorage.removeItem('health_os_wallpaper'); App.init(); UI.toast('壁纸已重置'); }
+    };
+    const Data = {
+        export: ()=>{
+            const blob = new Blob([JSON.stringify(localStorage)], {type:'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `HealthOS_Backup_${DB.today()}.json`;
+            a.click();
+        },
+        import: (el)=>{
+            const r=new FileReader();
+            r.onload=e=>{
+                try {
+                    const d = JSON.parse(e.target.result);
+                    Object.assign(localStorage, d);
+                    alert('数据恢复成功，即将重启');
+                    location.reload();
+                } catch(err) { alert('备份文件格式错误'); }
+            };
+            r.readAsText(el.files[0]);
+        },
+        clear: ()=>{ if(confirm('确定要清空所有健康数据和聊天记录吗？此操作不可恢复。')){ localStorage.clear(); location.reload(); } }
+    };
+
+    /* --- 初始化 --- */
+    setInterval(()=>{
+        const now = new Date();
+        const t = now.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit', hour12:false});
+        document.getElementById('clock-big').innerText = t; 
+        document.getElementById('clock-small').innerText = t;
+        const days = ['周日','周一','周二','周三','周四','周五','周六'];
+        document.getElementById('date-text').innerText = `${now.getMonth()+1}月${now.getDate()}日 ${days[now.getDay()]}`;
+    },1000);
+
+    // 启动
+    SleepApp.render(); 
+    PoopApp.render(); 
+    PeriodApp.render(); 
+    ChatApp.init = ()=>{
+        ChatApp.history = DB.get('chat_history',[]);
+        const p=DB.get('ai_persona',ChatApp.persona); 
+        document.getElementById('ai-title').innerText=p.name; 
+        ChatApp.render();
+    };
+    ChatApp.init();
+    App.init();
+
+</script>
+</body>
+</html>
